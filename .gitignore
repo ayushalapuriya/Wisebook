@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+uploads
+*.log
+*.pid
+*google*key*.json
+server/google-vision-key.json
+*_tmp.ps1
