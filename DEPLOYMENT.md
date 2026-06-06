@@ -2,15 +2,16 @@
 
 This repo is ready for a split deployment:
 
-- Backend: Render web service from `render.yaml`
-- Frontend: Vercel static Vite app from `vercel.json`
+- Backend: Render web service from `render.yaml` or `server/render.yaml`
+- Frontend: Vercel static Vite app from `client/vercel.json`
 - Database: MongoDB Atlas connection string
 
 ## 1. Backend on Render
 
 1. Open Render and create a new Blueprint from `https://github.com/ayushalapuriya/Wisebook`.
-2. Render will detect `render.yaml` and create `wisebook-api`.
-3. Set these environment variables:
+2. Render will detect the root `render.yaml` and create `wisebook-api`.
+3. If you create the backend as a normal Render web service instead, choose `server` as the root directory. The same config is also available at `server/render.yaml`.
+4. Set these environment variables:
 
 ```bash
 MONGO_URI=mongodb+srv://...
@@ -32,7 +33,7 @@ https://your-render-service.onrender.com/api/health
 ## 2. Frontend on Vercel
 
 1. Import `https://github.com/ayushalapuriya/Wisebook` in Vercel.
-2. Keep the root directory as the repository root.
+2. Set the root directory to `client`.
 3. Set this environment variable:
 
 ```bash
