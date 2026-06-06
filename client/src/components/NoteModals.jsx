@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
+import { Loader } from "./feedback.jsx";
 import { List, Panel } from "./ui.jsx";
 
-export function ViewNoteModal({ note, onClose, onRegenerate, summaryStatus }) {
+export function ViewNoteModal({ note, onClose, onRegenerate, summaryStatus, summaryLoading }) {
   const summary = note.aiSummary || {};
 
   return (
@@ -24,8 +25,8 @@ export function ViewNoteModal({ note, onClose, onRegenerate, summaryStatus }) {
           </Panel>
           <Panel title="AI Summary">
             <p className="text-sm font-semibold leading-7 text-ink/75">{summary.shortSummary || "Summary not generated yet."}</p>
-            <button className="mt-4 rounded-md bg-ink px-4 py-2 text-sm font-bold text-white" onClick={() => onRegenerate(note)}>
-              Generate New Summary
+            <button className="mt-4 rounded-md bg-ink px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={() => onRegenerate(note)} disabled={summaryLoading}>
+              {summaryLoading ? <Loader label="Generating" /> : "Generate New Summary"}
             </button>
             {summaryStatus && <p className="mt-3 rounded-md bg-paper p-2 text-sm font-semibold text-ink/70">{summaryStatus}</p>}
           </Panel>
@@ -40,7 +41,7 @@ export function ViewNoteModal({ note, onClose, onRegenerate, summaryStatus }) {
   );
 }
 
-export function EditNoteModal({ note, onClose, onSave }) {
+export function EditNoteModal({ note, onClose, onSave, saving }) {
   const [form, setForm] = useState({
     title: note.title || "",
     tagsText: (note.tags || []).join(", "),
@@ -68,7 +69,9 @@ export function EditNoteModal({ note, onClose, onSave }) {
         <input className="mt-3 w-full rounded-md border p-3" value={form.tagsText} onChange={(event) => setForm({ ...form, tagsText: event.target.value })} placeholder="Tags separated by commas" />
         <textarea className="mt-3 min-h-64 w-full rounded-md border p-3" value={form.extractedText} onChange={(event) => setForm({ ...form, extractedText: event.target.value })} placeholder="Extracted text" />
         <div className="mt-4 flex gap-3">
-          <button className="rounded-md bg-coral px-5 py-3 font-bold text-white" type="submit">Save Changes</button>
+          <button className="rounded-md bg-coral px-5 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={saving}>
+            {saving ? <Loader label="Saving" /> : "Save Changes"}
+          </button>
           <button className="rounded-md border px-5 py-3 font-bold" type="button" onClick={onClose}>Cancel</button>
         </div>
       </form>

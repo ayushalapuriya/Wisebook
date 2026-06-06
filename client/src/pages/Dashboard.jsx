@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Bell, Menu, Plus, Search, Upload } from "lucide-react";
+import { Loader } from "../components/feedback.jsx";
 import NotesGrid from "../components/NotesGrid.jsx";
 import { EditNoteModal, ViewNoteModal } from "../components/NoteModals.jsx";
 import Sidebar from "../components/Sidebar.jsx";
@@ -7,7 +8,7 @@ import { List, NoteMetric, NoteRow, Panel } from "../components/ui.jsx";
 import { defaultSubjects, demoNotes } from "../data/demo.js";
 import { api, clearSession, downloadFile, getToken, setSession } from "../lib/api.js";
 
-export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
+export default function Dashboard({ user, onLogout, onHome, onUserChange, notify }) {
   const [active, setActive] = useState("Dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
   const [notes, setNotes] = useState(demoNotes);
@@ -23,9 +24,18 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
   const [summaryStatus, setSummaryStatus] = useState("");
   const [currentUser, setCurrentUser] = useState(user);
   const [profileStatus, setProfileStatus] = useState("");
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+  const [deletingNoteId, setDeletingNoteId] = useState("");
+  const [downloadingNoteId, setDownloadingNoteId] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
+    setInitialLoading(true);
     Promise.all([
       api("/notes").then((data) => setNotes(data.notes)).catch(() => null),
       api("/subjects").then((data) => {
@@ -33,7 +43,7 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
         if (savedSubjects.length > 0) setSubjects(savedSubjects);
       }).catch(() => null),
       api("/analytics").then(setAnalytics).catch(() => null)
-    ]);
+    ]).finally(() => setInitialLoading(false));
   }, []);
 
   const availableSubjects = useMemo(() => {
@@ -81,8 +91,10 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
       }
       form.reset();
       setActive("My Notes");
+      notify?.({ type: "success", title: "Note uploaded", message: "OCR finished and the note was saved." });
     } catch (err) {
       setUploadError(err.message);
+      notify?.({ type: "error", title: "Upload failed", message: err.message });
     } finally {
       setUploading(false);
     }
@@ -95,11 +107,13 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
       setSelectedNote(data.note);
     } catch (err) {
       setNoteActionError(err.message);
+      notify?.({ type: "error", title: "Could not open note", message: err.message });
     }
   }
 
   async function saveNote(updatedNote) {
     setNoteActionError("");
+    setSavingNote(true);
     try {
       const payload = {
         title: updatedNote.title,
@@ -111,37 +125,53 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
         : await api(`/notes/${updatedNote._id}`, { method: "PUT", body: JSON.stringify(payload) });
       setNotes(notes.map((note) => (note._id === updatedNote._id ? data.note : note)));
       setEditingNote(null);
+      notify?.({ type: "success", title: "Note updated", message: "Your changes were saved." });
     } catch (err) {
       setNoteActionError(err.message);
+      notify?.({ type: "error", title: "Save failed", message: err.message });
+    } finally {
+      setSavingNote(false);
     }
   }
 
   async function deleteNote(noteId) {
     setNoteActionError("");
+    setDeletingNoteId(noteId);
     try {
       if (!noteId.startsWith("demo-")) await api(`/notes/${noteId}`, { method: "DELETE" });
       setNotes(notes.filter((note) => note._id !== noteId));
+      notify?.({ type: "success", title: "Note deleted", message: "The note was removed from your library." });
     } catch (err) {
       setNoteActionError(err.message);
+      notify?.({ type: "error", title: "Delete failed", message: err.message });
+    } finally {
+      setDeletingNoteId("");
     }
   }
 
   async function downloadNotePdf(note) {
     setNoteActionError("");
+    setDownloadingNoteId(note._id);
     try {
       if (note._id.startsWith("demo-")) {
         setNoteActionError("Save or upload a real note before downloading PDF.");
+        notify?.({ type: "info", title: "PDF unavailable", message: "Save or upload a real note before downloading PDF." });
         return;
       }
       await downloadFile(`/notes/${note._id}/export/pdf`, `${note.title || "wisebook-note"}.pdf`);
+      notify?.({ type: "success", title: "PDF downloaded", message: "Your note export is ready." });
     } catch (err) {
       setNoteActionError(err.message);
+      notify?.({ type: "error", title: "Download failed", message: err.message });
+    } finally {
+      setDownloadingNoteId("");
     }
   }
 
   async function regenerateSummary(note) {
     setNoteActionError("");
     setSummaryStatus("Generating new summary...");
+    setSummaryLoading(true);
     try {
       const data = note._id?.startsWith("demo-")
         ? { note: buildLocalSummary(note) }
@@ -149,14 +179,19 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
       setNotes(notes.map((item) => (item._id === note._id ? data.note : item)));
       setSelectedNote(data.note);
       setSummaryStatus("Summary updated.");
+      notify?.({ type: "success", title: "Summary updated", message: "A fresh AI summary is ready." });
     } catch (err) {
       setNoteActionError(err.message);
       setSummaryStatus(`Summary failed: ${err.message}`);
+      notify?.({ type: "error", title: "Summary failed", message: err.message });
+    } finally {
+      setSummaryLoading(false);
     }
   }
 
   async function updateProfile(profile) {
     setProfileStatus("Updating profile...");
+    setUpdatingProfile(true);
     try {
       const body = new FormData();
       body.append("name", profile.name);
@@ -169,18 +204,27 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
       setCurrentUser(data.user);
       onUserChange(data.user);
       setProfileStatus("Profile updated successfully.");
+      notify?.({ type: "success", title: "Profile updated", message: "Your account details were saved." });
     } catch (err) {
       setProfileStatus(err.message);
+      notify?.({ type: "error", title: "Profile update failed", message: err.message });
+    } finally {
+      setUpdatingProfile(false);
     }
   }
 
   async function changePassword(passwords) {
     setProfileStatus("Changing password...");
+    setChangingPassword(true);
     try {
       const data = await api("/auth/password", { method: "PUT", body: JSON.stringify(passwords) });
       setProfileStatus(data.message || "Password updated successfully.");
+      notify?.({ type: "success", title: "Password updated", message: data.message || "Your password was changed." });
     } catch (err) {
       setProfileStatus(err.message);
+      notify?.({ type: "error", title: "Password change failed", message: err.message });
+    } finally {
+      setChangingPassword(false);
     }
   }
 
@@ -188,12 +232,16 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
     const confirmed = window.confirm("Delete your WiseBook account and all notes? This cannot be undone.");
     if (!confirmed) return;
     setProfileStatus("Deleting account...");
+    setDeletingAccount(true);
     try {
       await api("/auth/me", { method: "DELETE" });
       clearSession();
+      notify?.({ type: "success", title: "Account deleted", message: "Your WiseBook account was removed." });
       onLogout();
     } catch (err) {
       setProfileStatus(err.message);
+      notify?.({ type: "error", title: "Account deletion failed", message: err.message });
+      setDeletingAccount(false);
     }
   }
 
@@ -221,19 +269,20 @@ export default function Dashboard({ user, onLogout, onHome, onUserChange }) {
           </div>
         </header>
         <div className="p-4 lg:p-8">
+          {initialLoading && <div className="mb-4 rounded-md bg-white p-4 text-sm font-bold text-ink/70 shadow-sm"><Loader label="Syncing workspace" /></div>}
           {active === "Dashboard" && <Overview stats={stats} notes={notes} />}
           {active === "Upload Notes" && <UploadNotes uploadNote={uploadNote} subjects={availableSubjects} uploadError={uploadError} uploading={uploading} />}
           {noteActionError && <p className="mb-4 rounded-md border border-coral/30 bg-coral/10 p-3 text-sm font-semibold text-coral">{noteActionError}</p>}
-          {active === "My Notes" && <NotesGrid notes={filteredNotes} onView={viewNote} onEdit={setEditingNote} onDelete={deleteNote} onDownload={downloadNotePdf} />}
+          {active === "My Notes" && <NotesGrid notes={filteredNotes} onView={viewNote} onEdit={setEditingNote} onDelete={deleteNote} onDownload={downloadNotePdf} deletingNoteId={deletingNoteId} downloadingNoteId={downloadingNoteId} />}
           {active === "AI Summaries" && <Summaries notes={filteredNotes} />}
-          {active === "Search Notes" && <SearchView notes={filteredNotes} query={query} setQuery={setQuery} filters={filters} setFilters={setFilters} subjects={availableSubjects} tags={availableTags} onView={viewNote} onEdit={setEditingNote} onDelete={deleteNote} onDownload={downloadNotePdf} />}
+          {active === "Search Notes" && <SearchView notes={filteredNotes} query={query} setQuery={setQuery} filters={filters} setFilters={setFilters} subjects={availableSubjects} tags={availableTags} onView={viewNote} onEdit={setEditingNote} onDelete={deleteNote} onDownload={downloadNotePdf} deletingNoteId={deletingNoteId} downloadingNoteId={downloadingNoteId} />}
           {active === "Subjects" && <Subjects subjects={availableSubjects} setSubjects={setSubjects} notes={notes} />}
           {active === "Analytics" && <Analytics notes={notes} stats={stats} />}
-          {active === "Profile" && <Profile user={currentUser} status={profileStatus} onUpdate={updateProfile} onPasswordChange={changePassword} onDeleteAccount={deleteAccount} />}
-          {active === "Settings" && <SettingsPanel onHome={onHome} onDeleteAccount={deleteAccount} />}
+          {active === "Profile" && <Profile user={currentUser} status={profileStatus} onUpdate={updateProfile} onPasswordChange={changePassword} onDeleteAccount={deleteAccount} updatingProfile={updatingProfile} changingPassword={changingPassword} deletingAccount={deletingAccount} />}
+          {active === "Settings" && <SettingsPanel onHome={onHome} onDeleteAccount={deleteAccount} deletingAccount={deletingAccount} />}
         </div>
-        {selectedNote && <ViewNoteModal note={selectedNote} onClose={() => { setSelectedNote(null); setSummaryStatus(""); }} onRegenerate={regenerateSummary} summaryStatus={summaryStatus} />}
-        {editingNote && <EditNoteModal note={editingNote} onClose={() => setEditingNote(null)} onSave={saveNote} />}
+        {selectedNote && <ViewNoteModal note={selectedNote} onClose={() => { setSelectedNote(null); setSummaryStatus(""); }} onRegenerate={regenerateSummary} summaryStatus={summaryStatus} summaryLoading={summaryLoading} />}
+        {editingNote && <EditNoteModal note={editingNote} onClose={() => setEditingNote(null)} onSave={saveNote} saving={savingNote} />}
       </section>
     </main>
   );
@@ -306,7 +355,7 @@ function UploadNotes({ uploadNote, subjects, uploadError, uploading }) {
         <textarea className="min-h-40 rounded-md border p-3 lg:col-span-2" placeholder="OCR output appears after upload and remains editable in saved notes." />
         {uploadError && <p className="rounded-md border border-coral/30 bg-coral/10 p-3 text-sm font-semibold text-coral lg:col-span-2">{uploadError}</p>}
         <button className="flex items-center justify-center gap-2 rounded-md bg-coral px-5 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={uploading}>
-          <Upload className="h-5 w-5" /> {uploading ? "Processing..." : "Process OCR and Save"}
+          {uploading ? <Loader label="Processing OCR" /> : <><Upload className="h-5 w-5" /> Process OCR and Save</>}
         </button>
       </form>
     </Panel>
@@ -330,7 +379,7 @@ function Summaries({ notes }) {
   );
 }
 
-function SearchView({ notes, query, setQuery, filters, setFilters, subjects, tags, onView, onEdit, onDelete, onDownload }) {
+function SearchView({ notes, query, setQuery, filters, setFilters, subjects, tags, onView, onEdit, onDelete, onDownload, deletingNoteId, downloadingNoteId }) {
   function updateFilter(name, value) {
     setFilters({ ...filters, [name]: value });
   }
@@ -365,7 +414,7 @@ function SearchView({ notes, query, setQuery, filters, setFilters, subjects, tag
           <p className="rounded-md bg-paper p-3 text-sm font-semibold text-ink/65 md:self-end">{notes.length} result{notes.length === 1 ? "" : "s"}</p>
         </div>
       </Panel>
-      <div className="mt-4"><NotesGrid notes={notes} onView={onView} onEdit={onEdit} onDelete={onDelete} onDownload={onDownload} /></div>
+      <div className="mt-4"><NotesGrid notes={notes} onView={onView} onEdit={onEdit} onDelete={onDelete} onDownload={onDownload} deletingNoteId={deletingNoteId} downloadingNoteId={downloadingNoteId} /></div>
     </>
   );
 }
@@ -414,7 +463,7 @@ function Analytics({ notes, stats }) {
   );
 }
 
-function Profile({ user, status, onUpdate, onPasswordChange, onDeleteAccount }) {
+function Profile({ user, status, onUpdate, onPasswordChange, onDeleteAccount, updatingProfile, changingPassword, deletingAccount }) {
   const [profile, setProfile] = useState({
     name: user?.name || "",
     email: user?.email || "",
@@ -451,20 +500,26 @@ function Profile({ user, status, onUpdate, onPasswordChange, onDeleteAccount }) 
           Upload Profile Photo
           <input className="mt-2 block w-full" type="file" accept="image/png,image/jpeg,image/webp" onChange={selectProfileImage} />
         </label>
-        <button className="rounded-md bg-ink p-3 font-bold text-white">Update Profile</button>
+        <button className="rounded-md bg-ink p-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={updatingProfile}>
+          {updatingProfile ? <Loader label="Updating" /> : "Update Profile"}
+        </button>
       </form>
       <form className="mt-6 grid gap-3 md:grid-cols-3" onSubmit={(event) => { event.preventDefault(); onPasswordChange(passwords); }}>
         <input className="rounded-md border p-3" placeholder="Current password" type="password" value={passwords.currentPassword} onChange={(event) => setPasswords({ ...passwords, currentPassword: event.target.value })} />
         <input className="rounded-md border p-3" placeholder="New password" type="password" value={passwords.newPassword} onChange={(event) => setPasswords({ ...passwords, newPassword: event.target.value })} />
         <input className="rounded-md border p-3" placeholder="Confirm password" type="password" value={passwords.confirmPassword} onChange={(event) => setPasswords({ ...passwords, confirmPassword: event.target.value })} />
-        <button className="rounded-md border p-3 font-bold md:col-span-1">Change Password</button>
+        <button className="rounded-md border p-3 font-bold disabled:cursor-not-allowed disabled:opacity-60 md:col-span-1" disabled={changingPassword}>
+          {changingPassword ? <Loader label="Changing" /> : "Change Password"}
+        </button>
       </form>
-      <button className="mt-6 rounded-md border border-coral p-3 font-bold text-coral" onClick={onDeleteAccount}>Delete Account</button>
+      <button className="mt-6 rounded-md border border-coral p-3 font-bold text-coral disabled:cursor-not-allowed disabled:opacity-60" onClick={onDeleteAccount} disabled={deletingAccount}>
+        {deletingAccount ? <Loader label="Deleting" /> : "Delete Account"}
+      </button>
     </Panel>
   );
 }
 
-function SettingsPanel({ onHome, onDeleteAccount }) {
+function SettingsPanel({ onHome, onDeleteAccount, deletingAccount }) {
   return (
     <Panel title="Settings">
       {["Voice reading", "Multi-language OCR", "AI chat with notes", "Smart quiz generator", "Study planner"].map((item) => (
@@ -475,7 +530,9 @@ function SettingsPanel({ onHome, onDeleteAccount }) {
       ))}
       <div className="mt-6 grid gap-3 md:grid-cols-2">
         <button className="rounded-md border p-3 font-bold" onClick={onHome}>Go to Home Page</button>
-        <button className="rounded-md border border-coral p-3 font-bold text-coral" onClick={onDeleteAccount}>Delete Account</button>
+        <button className="rounded-md border border-coral p-3 font-bold text-coral disabled:cursor-not-allowed disabled:opacity-60" onClick={onDeleteAccount} disabled={deletingAccount}>
+          {deletingAccount ? <Loader label="Deleting" /> : "Delete Account"}
+        </button>
       </div>
     </Panel>
   );

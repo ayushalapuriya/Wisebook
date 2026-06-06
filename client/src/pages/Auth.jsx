@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Loader } from "../components/feedback.jsx";
 import { api, setSession } from "../lib/api.js";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -30,7 +31,7 @@ function getValidationErrors(form, mode) {
   return nextErrors;
 }
 
-export default function Auth({ mode, onModeChange, onDone, onBack }) {
+export default function Auth({ mode, onModeChange, onDone, onBack, notify }) {
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
@@ -54,7 +55,10 @@ export default function Auth({ mode, onModeChange, onDone, onBack }) {
     setError("");
     const nextErrors = getValidationErrors(form, mode);
     setFieldErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      notify?.({ type: "error", title: "Check the form", message: "Fix the highlighted fields and try again." });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -65,10 +69,12 @@ export default function Auth({ mode, onModeChange, onDone, onBack }) {
       };
       const data = await api(`/auth/${mode}`, { method: "POST", body: JSON.stringify(payload) });
       setSession(data.token, data.user);
+      notify?.({ type: "success", title: isRegister ? "Account created" : "Signed in", message: "Welcome to WiseBook." });
       onDone(data.user);
     } catch (err) {
       if (err.status) {
         setError(err.message);
+        notify?.({ type: "error", title: "Authentication failed", message: err.message });
         return;
       }
       const demoUser = {
@@ -77,6 +83,7 @@ export default function Auth({ mode, onModeChange, onDone, onBack }) {
         email: form.email || "student@example.com"
       };
       setSession("demo-token", demoUser);
+      notify?.({ type: "info", title: "Demo mode started", message: "Backend is not reachable, so WiseBook opened with demo data." });
       onDone(demoUser);
     } finally {
       setIsSubmitting(false);
@@ -118,7 +125,7 @@ export default function Auth({ mode, onModeChange, onDone, onBack }) {
         </label>
         {error && <p className="mt-4 rounded-md bg-coral/10 p-3 text-sm font-semibold text-coral">{error}</p>}
         <button className="mt-5 w-full rounded-md bg-ink py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Please wait..." : isRegister ? "Create account" : "Sign in"}
+          {isSubmitting ? <Loader label="Please wait" /> : isRegister ? "Create account" : "Sign in"}
         </button>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
           {!isRegister && <button type="button" className="font-bold text-aqua">Forgot password?</button>}
