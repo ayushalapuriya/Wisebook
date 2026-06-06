@@ -17,6 +17,7 @@ export default function App() {
     return (
       <Auth
         mode={authMode}
+        onModeChange={setAuthMode}
         onBack={() => setScreen("landing")}
         onDone={(nextUser) => { setUser(nextUser); setScreen("app"); }}
       />
